@@ -1,0 +1,39 @@
+[tool.poetry]
+name = "yt-topics-pro"
+version = "0.1.0"
+description = "End-to-end topic modeling and sentiment analysis for YouTube videos."
+authors = ["Your Name <you@example.com>"]
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.10"
+typer = {extras = ["rich"], version = "^0.12.3"}
+polars = "^1.0.0"
+youtube-transcript-api = "^0.6.2"
+faiss-cpu = "1.8.0"
+scikit-learn = "^1.5.0"
+streamlit = "^1.35.0"
+pyarrow = "^16.1.0"
+yt-dlp = "^2025.8.22"
+plotly = "^5.22.0"
+bertopic = {extras = ["visualization"], version = "^0.16.2"}
+umap-learn = "^0.5.6"
+hdbscan = "^0.8.33"
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^8.1.1"
+ruff = "^0.3.2"
+
+[tool.poetry.extras]
+gcp = ["google-api-python-client"]
+ctm = ["contextualized-topic-models"]
+top2vec = ["top2vec"]
+# gpu = ["faiss-gpu"]
+# absa = ["pyabsa"]
+
+[tool.poetry.scripts]
+yt-topics-pro = "yt_topics_pro.cli:app"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
