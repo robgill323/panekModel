@@ -107,9 +107,10 @@ def run_dashboard():
     topic_info_df = get_topic_info_df(topic_model)
 
     # --- Main Content Tabs ---
-    tab1, tab2, tab3, tab4, tab5 = st.tabs([
+    tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
         "📊 Overview & Data Explorer", 
         "🧠 Topic Deep Dive", 
+        "🎬 Video Deep Dive",
         "📈 Advanced Visuals", 
         "📝 Model Evaluation",
         "😊 Sentiment Analysis"
@@ -137,7 +138,29 @@ def run_dashboard():
         if search_query:
             filtered_df = filtered_df.filter(pl.col("normalized_text").str.contains(search_query, literal=False))
         
-        st.dataframe(filtered_df, use_container_width=True)
+        # Prepare topic names for joining
+        topic_info_pl_df = pl.from_pandas(topic_info_df).rename({"Topic": "topic_id"})
+        
+        # Create display dataframe with URLs and topic names
+        display_df = filtered_df.with_columns(
+            pl.format("https://www.youtube.com/watch?v={}", pl.col("video_id")).alias("video_url")
+        ).join(
+            topic_info_pl_df.select(["topic_id", "Name"]), on="topic_id", how="left"
+        ).select([
+            "video_url",
+            "title", 
+            "Name",
+            "normalized_text",
+            "sentiment"
+        ]).rename({
+            "video_url": "Video URL",
+            "title": "Video Title",
+            "Name": "Topic",
+            "normalized_text": "Text",
+            "sentiment": "Sentiment"
+        })
+        
+        st.dataframe(display_df, use_container_width=True)
 
     # --- Tab 2: Topic Deep Dive ---
     with tab2:
@@ -217,8 +240,174 @@ def run_dashboard():
                             for doc in top_docs:
                                 st.info(f"_{doc}_")
 
-    # --- Tab 3: Advanced Visualizations ---
+    # --- Tab 3: Video Deep Dive ---
     with tab3:
+        st.header("🎬 Video Deep Dive Analysis")
+        st.markdown("Select a video to analyze its topic distribution, sentiment, and content in detail.")
+        
+        # Get unique videos with titles
+        video_options_df = chunks_df.select(["video_id", "title"]).unique().sort("title")
+        video_dict = {row["video_id"]: row["title"] for row in video_options_df.iter_rows(named=True)}
+        
+        selected_video = st.selectbox(
+            "**Choose a video to analyze:**",
+            options=list(video_dict.keys()),
+            format_func=lambda x: f"{video_dict[x][:80]}..." if len(video_dict[x]) > 80 else video_dict[x]
+        )
+        
+        if selected_video:
+            # Filter chunks for this video
+            video_chunks = chunks_df.filter(pl.col("video_id") == selected_video)
+            
+            # Get video metadata
+            video_title = video_dict[selected_video]
+            video_url = f"https://www.youtube.com/watch?v={selected_video}"
+            
+            # Display video info header
+            st.subheader(f"📹 {video_title}")
+            st.markdown(f"🔗 [Watch on YouTube]({video_url})")
+            
+            # Create two columns for layout
+            col1, col2 = st.columns([1, 1], gap="large")
+            
+            with col1:
+                # Embedded YouTube player
+                with st.container(border=True):
+                    st.markdown("### Video Preview")
+                    embed_url = f"https://www.youtube.com/embed/{selected_video}"
+                    st.markdown(
+                        f'<iframe width="100%" height="315" src="{embed_url}" '
+                        f'frameborder="0" allow="accelerometer; autoplay; clipboard-write; '
+                        f'encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>',
+                        unsafe_allow_html=True
+                    )
+                
+                # Video statistics
+                with st.container(border=True):
+                    st.markdown("### Video Statistics")
+                    stats_col1, stats_col2 = st.columns(2)
+                    stats_col1.metric("Total Chunks", f"{video_chunks.shape[0]}")
+                    
+                    avg_sentiment = video_chunks["sentiment"].mean()
+                    sentiment_label = "Positive" if avg_sentiment > 0.1 else "Negative" if avg_sentiment < -0.1 else "Neutral"
+                    stats_col2.metric("Avg Sentiment", f"{sentiment_label} ({avg_sentiment:.2f})")
+            
+            with col2:
+                # Topic distribution pie chart
+                with st.container(border=True):
+                    st.markdown("### Topic Distribution")
+                    
+                    # Calculate topic counts
+                    topic_counts = video_chunks.filter(pl.col("topic_id") != -1).group_by("topic_id").len()
+                    
+                    if not topic_counts.is_empty():
+                        # Join with topic names
+                        topic_info_pl_df = pl.from_pandas(topic_info_df).rename({"Topic": "topic_id"})
+                        topic_dist = topic_counts.join(
+                            topic_info_pl_df.select(["topic_id", "Name"]), 
+                            on="topic_id", 
+                            how="left"
+                        ).sort("len", descending=True)
+                        
+                        # Get dominant topic
+                        dominant_topic = topic_dist.row(0, named=True)
+                        st.info(f"**Dominant Topic:** {dominant_topic['Name']} ({dominant_topic['len']} chunks, {dominant_topic['len']/video_chunks.shape[0]*100:.1f}%)")
+                        
+                        # Create pie chart
+                        fig_pie = go.Figure(data=[go.Pie(
+                            labels=topic_dist["Name"].to_list(),
+                            values=topic_dist["len"].to_list(),
+                            hole=0.3,
+                            marker=dict(
+                                colors=['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd', 
+                                       '#8c564b', '#e377c2', '#7f7f7f', '#bcbd22', '#17becf',
+                                       '#aec7e8', '#ffbb78', '#98df8a', '#ff9896', '#c5b0d5']
+                            )
+                        )])
+                        
+                        fig_pie.update_layout(
+                            showlegend=True,
+                            legend=dict(orientation="v", yanchor="middle", y=0.5, xanchor="left", x=1.05),
+                            margin=dict(l=20, r=20, t=20, b=20),
+                            height=350
+                        )
+                        
+                        st.plotly_chart(fig_pie, use_container_width=True)
+                    else:
+                        st.warning("No topics assigned to chunks in this video.")
+            
+            # Sentiment timeline
+            st.markdown("---")
+            with st.container(border=True):
+                st.markdown("### Sentiment Over Time")
+                st.markdown("Track how sentiment changes throughout the video.")
+                
+                # Sort by chunk_id or start_time if available
+                if "start_time" in video_chunks.columns:
+                    timeline_data = video_chunks.sort("start_time")
+                elif "chunk_id" in video_chunks.columns:
+                    timeline_data = video_chunks.sort("chunk_id")
+                else:
+                    timeline_data = video_chunks
+                
+                # Create line chart
+                fig_sentiment = go.Figure()
+                
+                fig_sentiment.add_trace(go.Scatter(
+                    x=list(range(len(timeline_data))),
+                    y=timeline_data["sentiment"].to_list(),
+                    mode='lines+markers',
+                    name='Sentiment',
+                    line=dict(color='#1c83e1', width=2),
+                    marker=dict(size=6),
+                    fill='tozeroy',
+                    fillcolor='rgba(28, 131, 225, 0.1)'
+                ))
+                
+                # Add zero line
+                fig_sentiment.add_hline(y=0, line_dash="dash", line_color="gray", opacity=0.5)
+                
+                fig_sentiment.update_layout(
+                    xaxis_title="Chunk Sequence",
+                    yaxis_title="Sentiment Score",
+                    yaxis=dict(range=[-1, 1]),
+                    plot_bgcolor="rgba(0,0,0,0)",
+                    paper_bgcolor="rgba(0,0,0,0)",
+                    margin=dict(l=10, r=10, t=10, b=10),
+                    height=300
+                )
+                
+                st.plotly_chart(fig_sentiment, use_container_width=True)
+            
+            # Chunk details table
+            st.markdown("---")
+            with st.container(border=True):
+                st.markdown("### Chunk Details")
+                st.markdown("All text chunks from this video with their topics and sentiment.")
+                
+                # Prepare display dataframe
+                topic_info_pl_df = pl.from_pandas(topic_info_df).rename({"Topic": "topic_id"})
+                
+                chunk_display = video_chunks.join(
+                    topic_info_pl_df.select(["topic_id", "Name"]), 
+                    on="topic_id", 
+                    how="left"
+                ).select([
+                    "chunk_id" if "chunk_id" in video_chunks.columns else pl.lit(None).alias("chunk_id"),
+                    "Name",
+                    "normalized_text",
+                    "sentiment"
+                ]).rename({
+                    "chunk_id": "Chunk",
+                    "Name": "Topic",
+                    "normalized_text": "Text",
+                    "sentiment": "Sentiment"
+                })
+                
+                st.dataframe(chunk_display, use_container_width=True, height=400)
+
+    # --- Tab 4: Advanced Visualizations ---
+    with tab4:
         st.header("Intertopic Distance Map")
         st.markdown("Visualize topics as circles, where size indicates prevalence and distance indicates similarity.")
         with st.spinner("Generating Intertopic Map..."):
@@ -242,8 +431,8 @@ def run_dashboard():
             else:
                 st.warning("Could not generate hierarchy visualization. This can happen with too few topics.")
 
-    # --- Tab 4: Model Evaluation ---
-    with tab4:
+    # --- Tab 5: Model Evaluation ---
+    with tab5:
         st.header("Topic Model Evaluation Metrics")
         st.markdown("This table shows quantitative metrics for each topic, helping to assess their quality.")
         evaluation_path = Path(settings.storage.reports_dir) / "topic_model_evaluation.csv"
@@ -268,8 +457,8 @@ def run_dashboard():
             else:
                 st.dataframe(eval_df, use_container_width=True)
 
-    # --- Tab 5: Sentiment Analysis ---
-    with tab5:
+    # --- Tab 6: Sentiment Analysis ---
+    with tab6:
         st.header("Sentiment Analysis by Video and Topic")
         st.markdown(
             """
