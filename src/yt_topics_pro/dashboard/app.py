@@ -160,7 +160,7 @@ def run_dashboard():
             "sentiment": "Sentiment"
         })
         
-        st.dataframe(display_df, use_container_width=True)
+        st.dataframe(display_df, width='stretch')
 
     # --- Tab 2: Topic Deep Dive ---
     with tab2:
@@ -217,7 +217,7 @@ def run_dashboard():
                             yaxis_title=None,
                             font=dict(family="sans serif", size=12, color="#31333F")
                         )
-                        st.plotly_chart(fig, use_container_width=True)
+                        st.plotly_chart(fig, width='stretch')
                     else:
                         st.warning("Could not retrieve data for this topic.")
 
@@ -332,7 +332,7 @@ def run_dashboard():
                             height=350
                         )
                         
-                        st.plotly_chart(fig_pie, use_container_width=True)
+                        st.plotly_chart(fig_pie, width='stretch')
                     else:
                         st.warning("No topics assigned to chunks in this video.")
             
@@ -377,7 +377,7 @@ def run_dashboard():
                     height=300
                 )
                 
-                st.plotly_chart(fig_sentiment, use_container_width=True)
+                st.plotly_chart(fig_sentiment, width='stretch')
             
             # Chunk details table
             st.markdown("---")
@@ -404,7 +404,7 @@ def run_dashboard():
                     "sentiment": "Sentiment"
                 })
                 
-                st.dataframe(chunk_display, use_container_width=True, height=400)
+                st.dataframe(chunk_display, width='stretch', height=400)
 
     # --- Tab 4: Advanced Visualizations ---
     with tab4:
@@ -412,7 +412,7 @@ def run_dashboard():
         st.markdown("Visualize topics as circles, where size indicates prevalence and distance indicates similarity.")
         with st.spinner("Generating Intertopic Map..."):
             fig_topics = generate_intertopic_map(topic_model)
-            st.plotly_chart(fig_topics, use_container_width=True)
+            st.plotly_chart(fig_topics, width='stretch')
 
         st.header("Topic Hierarchy")
         st.markdown(
@@ -427,7 +427,7 @@ def run_dashboard():
         with st.spinner("Generating Hierarchy Chart..."):
             fig_hierarchy = generate_hierarchy_chart(topic_model)
             if fig_hierarchy:
-                st.plotly_chart(fig_hierarchy, use_container_width=True)
+                st.plotly_chart(fig_hierarchy, width='stretch')
             else:
                 st.warning("Could not generate hierarchy visualization. This can happen with too few topics.")
 
@@ -452,10 +452,10 @@ def run_dashboard():
                         cmap='Greens',
                         subset=available_style_cols
                     ),
-                    use_container_width=True
+                    width='stretch'
                 )
             else:
-                st.dataframe(eval_df, use_container_width=True)
+                st.dataframe(eval_df, width='stretch')
 
     # --- Tab 6: Sentiment Analysis ---
     with tab6:
@@ -512,7 +512,7 @@ def run_dashboard():
                     ["title", "URL", "Name", "avg_sentiment"]
                 ).rename({"Name": "Dominant Topic", "avg_sentiment": "Avg. Sentiment"})
                 
-                st.dataframe(video_analysis_df, use_container_width=True)
+                st.dataframe(video_analysis_df, width='stretch')
             else:
                 st.info("No topic assignments found to determine dominant topics for videos.")
 
@@ -533,7 +533,7 @@ def run_dashboard():
                 topic_sentiment.select(["Name", "avg_topic_sentiment"]).rename(
                     {"Name": "Topic", "avg_topic_sentiment": "Avg. Sentiment"}
                 ), 
-                use_container_width=True
+                width='stretch'
             )
 
 if __name__ == "__main__":
