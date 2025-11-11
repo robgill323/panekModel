@@ -107,7 +107,8 @@ def run_dashboard():
     topic_info_df = get_topic_info_df(topic_model)
 
     # --- Main Content Tabs ---
-    tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
+    tab0, tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
+        "📤 Upload & Process",
         "📊 Overview & Data Explorer", 
         "🧠 Topic Deep Dive", 
         "🎬 Video Deep Dive",
@@ -115,6 +116,157 @@ def run_dashboard():
         "📝 Model Evaluation",
         "😊 Sentiment Analysis"
     ])
+
+    # --- Tab 0: Upload & Process ---
+    with tab0:
+        st.header("📤 Upload YouTube URLs & Process")
+        st.markdown("""
+        Upload a CSV file containing YouTube URLs to ingest transcripts and run topic modeling.
+        
+        **CSV Format Requirements:**
+        - Must have a column named `url` containing YouTube video URLs
+        - Example: `https://www.youtube.com/watch?v=VIDEO_ID`
+        - One URL per row
+        """)
+        
+        col1, col2 = st.columns([2, 1])
+        
+        with col1:
+            uploaded_file = st.file_uploader(
+                "Choose a CSV file",
+                type=["csv"],
+                help="Upload a CSV with a 'url' column containing YouTube video URLs"
+            )
+            
+            if uploaded_file is not None:
+                try:
+                    # Read the uploaded CSV
+                    urls_df = pd.read_csv(uploaded_file)
+                    
+                    # Validate the CSV has a 'url' column
+                    if 'url' not in urls_df.columns:
+                        st.error("❌ CSV must contain a 'url' column!")
+                    else:
+                        st.success(f"✅ Loaded {len(urls_df)} URLs from CSV")
+                        
+                        # Show preview of URLs
+                        with st.expander("Preview URLs"):
+                            st.dataframe(urls_df.head(10), use_container_width=True)
+                        
+                        # Save to temporary text file (one URL per line)
+                        temp_urls_path = Path(settings.storage.parquet_dir) / "temp_urls.txt"
+                        temp_urls_path.parent.mkdir(parents=True, exist_ok=True)
+                        with open(temp_urls_path, 'w') as f:
+                            for url in urls_df['url']:
+                                f.write(f"{url}\n")
+                        
+                        st.info(f"📁 URLs saved to: `{temp_urls_path}`")
+                        
+                except Exception as e:
+                    st.error(f"❌ Error reading CSV: {str(e)}")
+        
+        with col2:
+            st.subheader("⚙️ Processing Options")
+            
+            use_llm_labels = st.checkbox(
+                "Use LLM for topic labels",
+                value=False,
+                help="Use GPT to generate descriptive topic names (requires API key)"
+            )
+            
+            num_topics = st.number_input(
+                "Number of topics",
+                min_value=0,
+                max_value=500,
+                value=0,
+                help="Leave at 0 for automatic topic discovery, or set a specific number to reduce topics"
+            )
+            
+            if num_topics == 0:
+                num_topics = None
+        
+        st.markdown("---")
+        
+        # Processing buttons
+        col_btn1, col_btn2, col_btn3 = st.columns(3)
+        
+        with col_btn1:
+            if st.button("🔽 1. Ingest Transcripts", use_container_width=True, type="primary"):
+                if uploaded_file is None:
+                    st.warning("⚠️ Please upload a CSV file first!")
+                else:
+                    with st.spinner("Ingesting transcripts... This may take several minutes."):
+                        try:
+                            import subprocess
+                            import sys
+                            
+                            # Run the ingest command
+                            result = subprocess.run(
+                                [sys.executable, "-m", "yt_topics_pro.cli", "ingest", "--videos", str(temp_urls_path)],
+                                capture_output=True,
+                                text=True,
+                                cwd=str(Path(__file__).parent.parent.parent.parent)
+                            )
+                            
+                            if result.returncode == 0:
+                                st.success("✅ Transcripts ingested successfully!")
+                                st.code(result.stdout, language="text")
+                            else:
+                                st.error(f"❌ Ingestion failed with error code {result.returncode}")
+                                st.code(result.stderr, language="text")
+                        except Exception as e:
+                            st.error(f"❌ Error running ingestion: {str(e)}")
+        
+        with col_btn2:
+            if st.button("⚙️ 2. Process & Model Topics", use_container_width=True, type="primary"):
+                with st.spinner("Processing data and modeling topics... This will take several minutes."):
+                    try:
+                        import subprocess
+                        import sys
+                        
+                        # Build command arguments
+                        cmd = [sys.executable, "-m", "yt_topics_pro.cli", "process"]
+                        if use_llm_labels:
+                            cmd.append("--use-llm-labels")
+                        if num_topics is not None:
+                            cmd.extend(["--num-topics", str(num_topics)])
+                        
+                        # Run the process command
+                        result = subprocess.run(
+                            cmd,
+                            capture_output=True,
+                            text=True,
+                            cwd=str(Path(__file__).parent.parent.parent.parent)
+                        )
+                        
+                        if result.returncode == 0:
+                            st.success("✅ Processing complete! Refresh the page to see results.")
+                            st.code(result.stdout[-2000:], language="text")  # Show last 2000 chars
+                            
+                            # Clear the cache so new data loads
+                            st.cache_data.clear()
+                        else:
+                            st.error(f"❌ Processing failed with error code {result.returncode}")
+                            st.code(result.stderr, language="text")
+                    except Exception as e:
+                        st.error(f"❌ Error running processing: {str(e)}")
+        
+        with col_btn3:
+            if st.button("🔄 3. Refresh Dashboard", use_container_width=True):
+                st.cache_data.clear()
+                st.rerun()
+        
+        # Instructions
+        st.markdown("---")
+        st.subheader("📖 How to Use")
+        st.markdown("""
+        1. **Upload CSV**: Upload a CSV file with YouTube URLs in a column named `url`
+        2. **Ingest**: Click "1. Ingest Transcripts" to download and extract transcripts
+        3. **Process**: Click "2. Process & Model Topics" to run topic modeling
+        4. **Refresh**: Click "3. Refresh Dashboard" to load the new results in other tabs
+        
+        **Note:** Processing can take 10-60 minutes depending on the number of videos.
+        """)
 
     # --- Tab 1: Overview & Data Explorer ---
     with tab1:
@@ -160,7 +312,7 @@ def run_dashboard():
             "sentiment": "Sentiment"
         })
         
-        st.dataframe(display_df, width='stretch')
+        st.dataframe(display_df, use_container_width=True)
 
     # --- Tab 2: Topic Deep Dive ---
     with tab2:
@@ -217,7 +369,7 @@ def run_dashboard():
                             yaxis_title=None,
                             font=dict(family="sans serif", size=12, color="#31333F")
                         )
-                        st.plotly_chart(fig, width='stretch')
+                        st.plotly_chart(fig, use_container_width=True)
                     else:
                         st.warning("Could not retrieve data for this topic.")
 
@@ -332,7 +484,7 @@ def run_dashboard():
                             height=350
                         )
                         
-                        st.plotly_chart(fig_pie, width='stretch')
+                        st.plotly_chart(fig_pie, use_container_width=True)
                     else:
                         st.warning("No topics assigned to chunks in this video.")
             
@@ -377,7 +529,7 @@ def run_dashboard():
                     height=300
                 )
                 
-                st.plotly_chart(fig_sentiment, width='stretch')
+                st.plotly_chart(fig_sentiment, use_container_width=True)
             
             # Chunk details table
             st.markdown("---")
@@ -404,7 +556,7 @@ def run_dashboard():
                     "sentiment": "Sentiment"
                 })
                 
-                st.dataframe(chunk_display, width='stretch', height=400)
+                st.dataframe(chunk_display, use_container_width=True, height=400)
 
     # --- Tab 4: Advanced Visualizations ---
     with tab4:
@@ -412,7 +564,7 @@ def run_dashboard():
         st.markdown("Visualize topics as circles, where size indicates prevalence and distance indicates similarity.")
         with st.spinner("Generating Intertopic Map..."):
             fig_topics = generate_intertopic_map(topic_model)
-            st.plotly_chart(fig_topics, width='stretch')
+            st.plotly_chart(fig_topics, use_container_width=True)
 
         st.header("Topic Hierarchy")
         st.markdown(
@@ -427,7 +579,7 @@ def run_dashboard():
         with st.spinner("Generating Hierarchy Chart..."):
             fig_hierarchy = generate_hierarchy_chart(topic_model)
             if fig_hierarchy:
-                st.plotly_chart(fig_hierarchy, width='stretch')
+                st.plotly_chart(fig_hierarchy, use_container_width=True)
             else:
                 st.warning("Could not generate hierarchy visualization. This can happen with too few topics.")
 
@@ -452,10 +604,10 @@ def run_dashboard():
                         cmap='Greens',
                         subset=available_style_cols
                     ),
-                    width='stretch'
+                    use_container_width=True
                 )
             else:
-                st.dataframe(eval_df, width='stretch')
+                st.dataframe(eval_df, use_container_width=True)
 
     # --- Tab 6: Sentiment Analysis ---
     with tab6:
@@ -512,7 +664,7 @@ def run_dashboard():
                     ["title", "URL", "Name", "avg_sentiment"]
                 ).rename({"Name": "Dominant Topic", "avg_sentiment": "Avg. Sentiment"})
                 
-                st.dataframe(video_analysis_df, width='stretch')
+                st.dataframe(video_analysis_df, use_container_width=True)
             else:
                 st.info("No topic assignments found to determine dominant topics for videos.")
 
@@ -533,7 +685,7 @@ def run_dashboard():
                 topic_sentiment.select(["Name", "avg_topic_sentiment"]).rename(
                     {"Name": "Topic", "avg_topic_sentiment": "Avg. Sentiment"}
                 ), 
-                width='stretch'
+                use_container_width=True
             )
 
 if __name__ == "__main__":
